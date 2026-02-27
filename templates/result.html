@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="card shadow p-4 mx-auto text-center" style="max-width: 420px;">
+
+    {% if success %}
+
+        <h4 class="text-success mb-3">✅ Verification Successful</h4>
+
+        <p>Phone number <strong>{{ phone }}</strong> has been verified.</p>
+
+        <a href="{{ url_for('espdata') }}" class="btn btn-primary mt-3">Request Parking</a>
+
+    {% else %}
+
+        <h4 class="text-danger mb-3">❌ Verification Failed</h4>
+
+        <p>Something went wrong. Try again.</p>
+
+        <a href="{{ url_for('index') }}" class="btn btn-secondary mt-3">Try Again</a>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}

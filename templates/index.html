@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="card shadow p-4 mx-auto" style="max-width: 420px;">
+
+    <h4 class="mb-3 text-center">Send OTP</h4>
+
+    <form method="POST" action="{{ url_for('index') }}">
+
+        <div class="mb-3">
+
+            <label class="form-label">Enter Mobile Number</label>
+
+            <input type="text" name="phone" class="form-control" placeholder="+919876543210" required>
+
+            <div class="form-text">Include country code (e.g. +91 for India)</div>
+
+        </div>
+
+        <button type="submit" class="btn btn-primary w-100">Send OTP</button>
+
+    </form>
+
+</div>
+
+{% endblock %}

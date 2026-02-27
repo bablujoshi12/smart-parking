@@ -1,0 +1,241 @@
+<!-- 
+  NEW TEMPLATE: dashboard.html
+  PURPOSE: Real-time parking cell status dashboard
+  FEATURES: Live cell count, conditional navigation, no back navigation
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Parking Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f0f0;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .dashboard-container {
+      background: white;
+      border-radius: 8px;
+      padding: 30px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      text-align: center;
+      max-width: 500px;
+      width: 90%;
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 20px;
+      font-size: 2em;
+    }
+    .status-card {
+      background: #28a745;
+      color: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 20px 0;
+    }
+    .status-card.no-space {
+      background: #dc3545;
+    }
+    .cell-count {
+      font-size: 3em;
+      font-weight: bold;
+      margin: 10px 0;
+    }
+    .status-text {
+      font-size: 1.1em;
+      margin: 5px 0;
+    }
+    .button-container {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+      margin-top: 20px;
+    }
+    .action-button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 12px 30px;
+      font-size: 1em;
+      border-radius: 5px;
+      cursor: pointer;
+      min-width: 150px;
+      transition: background 0.3s ease;
+    }
+    .action-button:hover {
+      background: #0056b3;
+    }
+    .action-button:disabled {
+      background: #6c757d;
+      cursor: not-allowed;
+    }
+    .exit-button {
+      background: #dc3545;
+    }
+    .exit-button:hover {
+      background: #c82333;
+    }
+    .no-space-message {
+      background: #ffebee;
+      color: #d32f2f;
+      padding: 15px;
+      border-radius: 5px;
+      margin: 15px 0;
+      border-left: 4px solid #d32f2f;
+    }
+    .loading {
+      color: #666;
+      font-style: italic;
+    }
+    .refresh-btn {
+      background: #28a745;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 10px;
+    }
+    .refresh-btn:hover {
+      background: #218838;
+    }
+  </style>
+</head>
+<body>
+  <div class="dashboard-container">
+    <h1>🚗 Smart Parking Dashboard</h1>
+    
+    <div id="statusContainer">
+      <p class="loading">🔄 Loading parking status...</p>
+    </div>
+    
+  </div>
+
+  <script>
+    let availableCells = 0;
+    let totalCells = 0;
+    let occupiedCells = 0;
+
+    // Load parking status on page load
+    window.onload = function() {
+      // Check if user is coming from entry/exit page
+      if (sessionStorage.getItem('entryStarted') || sessionStorage.getItem('exitStarted')) {
+        // Redirect to appropriate page
+        if (sessionStorage.getItem('entryStarted')) {
+          window.location.href = "/entry";
+        } else if (sessionStorage.getItem('exitStarted')) {
+          window.location.href = "/exit";
+        }
+        return;
+      }
+      loadParkingStatus();
+    };
+
+    // Function to load real-time parking status
+    async function loadParkingStatus() {
+      const statusContainer = document.getElementById("statusContainer");
+      statusContainer.innerHTML = '<p class="loading">🔄 Loading parking status...</p>';
+
+      try {
+        const response = await fetch("/api/parking-status");
+        const data = await response.json();
+
+        if (!response.ok) {
+          statusContainer.innerHTML = '<p style="color: red;">Error loading parking status</p>';
+          return;
+        }
+
+        availableCells = data.available_cells;
+        totalCells = data.total_cells;
+        occupiedCells = data.occupied_cells;
+        
+        displayStatus(data);
+      } catch (error) {
+        console.error("Error:", error);
+        statusContainer.innerHTML = '<p style="color: red;">Network error loading status</p>';
+      }
+    }
+
+    // Function to display parking status
+    function displayStatus(data) {
+      const statusContainer = document.getElementById("statusContainer");
+      
+      if (data.available_cells > 0) {
+        // Parking available
+        statusContainer.innerHTML = `
+          <div class="status-card">
+            <div class="cell-count">${data.available_cells}</div>
+            <div class="status-text">Parking Cells Available</div>
+            <div class="status-text">Out of ${data.total_cells} Total Cells</div>
+          </div>
+          <div class="button-container">
+            <button class="action-button" onclick="proceedToParking()">
+              🚀 Proceed to Parking
+            </button>
+            ${data.occupied_cells > 0 ? 
+              `<button class="action-button exit-button" onclick="proceedToExit()">
+                🚪 Exit Parking
+              </button>` : 
+              `<button class="action-button exit-button" disabled>
+                🚫 No Vehicles to Exit
+              </button>`
+            }
+          </div>
+        `;
+      } else {
+        // No parking available
+        statusContainer.innerHTML = `
+          <div class="status-card no-space">
+            <div class="cell-count">0</div>
+            <div class="status-text">No Parking Available</div>
+            <div class="status-text">All ${data.total_cells} Cells Occupied</div>
+          </div>
+          <div class="no-space-message">
+            <h3>⚠️ Parking Full</h3>
+            <p>Sorry, all parking cells are currently occupied. Please try again later.</p>
+            <p><strong>Next Available:</strong> Check back in a few minutes</p>
+          </div>
+          <div class="button-container">
+            <button class="action-button" disabled>
+              🚫 No Space Available
+            </button>
+            <button class="action-button exit-button" onclick="proceedToExit()">
+              🚪 Exit Parking
+            </button>
+          </div>
+        `;
+      }
+    }
+
+    // Function to proceed to parking (only if space available)
+    function proceedToParking() {
+      if (availableCells > 0) {
+        // Set session flag to prevent dashboard access
+        sessionStorage.setItem('entryStarted', 'true');
+        // Redirect to entry page
+        window.location.href = "/entry";
+      }
+    }
+
+    // Function to proceed to exit (only if vehicles are parked)
+    function proceedToExit() {
+      if (occupiedCells > 0) {
+        // Set session flag to prevent dashboard access
+        sessionStorage.setItem('exitStarted', 'true');
+        // Redirect to exit page
+        window.location.href = "/exit";
+      }
+    }
+
+    // Auto-refresh every 30 seconds
+    setInterval(loadParkingStatus, 30000);
+  </script>
+</body>
+</html>

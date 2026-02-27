@@ -1,0 +1,183 @@
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Vehicle Lookup</title>
+
+  <style>
+
+    body {
+
+      font-family: Arial, sans-serif;
+
+      background-color: #f8f9fb;
+
+      padding: 40px;
+
+    }
+
+    h2 {
+
+      color: #333;
+
+    }
+
+    input {
+
+      padding: 10px;
+
+      width: 250px;
+
+      border: 1px solid #ccc;
+
+      border-radius: 5px;
+
+      margin-right: 10px;
+
+    }
+
+    button {
+
+      background-color: #0078D7;
+
+      color: white;
+
+      border: none;
+
+      padding: 10px 18px;
+
+      border-radius: 5px;
+
+      cursor: pointer;
+
+      font-size: 15px;
+
+    }
+
+    button:hover {
+
+      background-color: #005fa3;
+
+    }
+
+    #result {
+
+      margin-top: 25px;
+
+      padding: 15px;
+
+      background-color: white;
+
+      border-radius: 8px;
+
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+
+    }
+
+    .error {
+
+      color: red;
+
+      font-weight: bold;
+
+    }
+
+  </style>
+
+</head>
+
+<body>
+
+  <div id="vacantDiv"></div>
+
+  <h2>Search Vehicle Reservation</h2>
+
+  <input type="text" id="vehNo" placeholder="Enter Vehicle Number" />
+
+  <button onclick="fetchData()">Search</button>
+
+  <div id="result"></div>
+
+  <script>
+
+    async function fetchData() { 
+
+    const vehNo = document.getElementById("vehNo").value.trim();
+
+    const resultDiv = document.getElementById("result");
+
+    const vacantDiv = document.getElementById("vacantDiv");
+
+    if (!vehNo) {
+
+      resultDiv.innerHTML = "<p class='error'>Please enter a vehicle number.</p>";
+
+      return;
+
+    }
+
+    resultDiv.innerHTML = "Loading...";
+
+    try {
+
+      const response = await fetch("/get_data", {
+
+      method: "POST",
+
+      headers: {
+
+        "Content-Type": "application/json"
+
+      },
+
+      body: JSON.stringify({ vehNo:vehNo })
+
+    });
+
+    
+
+    if (!response.ok) {
+
+      console.error("HTTP Error:", response.status);
+
+      const text = await response.text();
+
+      console.log("Server returned:", text);
+
+    } 
+
+    else {
+
+        const data = await response.json();
+
+        vacantDiv.innerHTML = `<h2>Vacant Parking Cells:${data.vacantCells}</h2>`;
+
+        if(data.vacantCells > 0) {
+
+          resultDiv.innerHTML = `<h3>Reservation Details</h3>
+
+          <p><b>Cell Name:</b> ${data.cellName}</p>
+
+          <p><b>Vehicle No:</b> ${data.vehNo}</p>`;
+
+        }
+
+    }
+
+  } catch (error) {
+
+    resultDiv.innerHTML = `<p class="error"> Runtime Error: ${error.stack}</p>`;
+
+  }
+
+}
+
+  </script>
+
+</body>
+
+</html>
