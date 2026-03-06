@@ -1,0 +1,416 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include <ESP32Servo.h>
+
+const char* ssid = "Bablu";
+const char* password = "88888888";
+
+const char* entryURL = "http://10.227.118.79:5000/get_pending_entry";
+const char* updateEntryURL = "http://10.227.118.79:5000/update_entry_status";
+
+const char* exitURL = "http://10.227.118.79:5000/get_pending_exit";
+const char* updateExitURL = "http://10.227.118.79:5000/update_exit_status";
+
+Servo entryGate;
+Servo slot1Servo;
+Servo slot2Servo;
+Servo slot3Servo;
+Servo exitGate;
+
+#define IR_BEFORE 22
+#define IR_AFTER 23
+
+#define TRIG1 5
+#define ECHO1 4
+
+#define TRIG2 16
+#define ECHO2 17
+
+#define TRIG3 25
+#define ECHO3 26
+
+#define EXIT_IR1 33
+#define EXIT_IR2 34
+
+int currentResID = 0;
+int currentSlot = 0;
+
+bool reservationActive=false;
+bool gateOpened=false;
+bool entryCompleted=false;
+bool slotOpened=false;
+bool carParked=false;
+
+bool exitReady=false;
+bool exitGateOpened=false;
+
+int exitResID=0;
+
+unsigned long lastCheck=0;
+unsigned long lastExitCheck=0;
+
+unsigned long exitGateTimer=0;
+
+int detectCount=0;
+
+void setup(){
+
+Serial.begin(115200);
+
+pinMode(IR_BEFORE,INPUT);
+pinMode(IR_AFTER,INPUT);
+
+pinMode(TRIG1,OUTPUT);
+pinMode(ECHO1,INPUT);
+
+pinMode(TRIG2,OUTPUT);
+pinMode(ECHO2,INPUT);
+
+pinMode(TRIG3,OUTPUT);
+pinMode(ECHO3,INPUT);
+
+pinMode(EXIT_IR1,INPUT);
+pinMode(EXIT_IR2,INPUT);
+
+entryGate.attach(32);
+
+slot1Servo.attach(19);
+slot2Servo.attach(21);
+slot3Servo.attach(18);
+
+exitGate.attach(27);
+
+entryGate.write(0);
+
+slot1Servo.write(0);
+slot2Servo.write(0);
+slot3Servo.write(0);
+
+exitGate.write(0);
+
+WiFi.begin(ssid,password);
+
+while(WiFi.status()!=WL_CONNECTED){
+delay(1000);
+Serial.println("Connecting WiFi...");
+}
+
+Serial.println("WiFi Connected");
+}
+
+void loop(){
+
+if(millis()-lastCheck>2000){
+checkReservation();
+lastCheck=millis();
+}
+
+if(millis()-lastExitCheck>2000){
+checkExit();
+lastExitCheck=millis();
+}
+
+handleEntryGate();
+handleSlotDetection();
+handleExit();
+
+delay(200);
+}
+
+void handleEntryGate(){
+
+if(reservationActive && !gateOpened){
+
+if(digitalRead(IR_BEFORE)==LOW){
+
+Serial.println("Car before gate");
+
+entryGate.write(90);
+
+gateOpened=true;
+
+delay(800);
+}
+}
+
+if(gateOpened && !entryCompleted){
+
+if(digitalRead(IR_AFTER)==LOW){
+
+Serial.println("Car crossed gate");
+
+entryGate.write(0);
+
+sendEntryUpdate(2);
+
+entryCompleted=true;
+
+delay(800);
+}
+}
+
+}
+
+void handleSlotDetection(){
+
+if(entryCompleted && !slotOpened){
+
+Serial.print("Opening slot ");
+Serial.println(currentSlot);
+
+if(currentSlot==1) slot1Servo.write(90);
+if(currentSlot==2) slot2Servo.write(90);
+if(currentSlot==3) slot3Servo.write(90);
+
+slotOpened=true;
+
+delay(2000);
+}
+
+if(slotOpened && !carParked){
+
+long distance=200;
+
+if(currentSlot==1) distance=readDistance(TRIG1,ECHO1);
+if(currentSlot==2) distance=readDistance(TRIG2,ECHO2);
+if(currentSlot==3) distance=readDistance(TRIG3,ECHO3);
+
+Serial.print("Distance: ");
+Serial.println(distance);
+
+if(distance < 12){
+
+detectCount++;
+
+if(detectCount >= 3){
+
+Serial.println("Car parked confirmed");
+
+if(currentSlot==1) slot1Servo.write(0);
+if(currentSlot==2) slot2Servo.write(0);
+if(currentSlot==3) slot3Servo.write(0);
+
+sendEntryUpdate(3);
+
+carParked=true;
+reservationActive=false;
+}
+}
+else{
+
+detectCount=0;
+
+}
+
+}
+
+}
+
+void handleExit(){
+
+if(exitReady){
+
+if(!exitGateOpened){
+
+if(digitalRead(EXIT_IR1)==LOW){
+
+Serial.println("Car at exit gate");
+
+exitGate.write(90);
+
+exitGateOpened=true;
+
+exitGateTimer=millis();
+
+}
+}
+
+if(exitGateOpened){
+
+if(digitalRead(EXIT_IR2)==LOW){
+
+Serial.println("Car exited");
+
+delay(2000);
+
+exitGate.write(0);
+
+sendExitUpdate();
+
+exitReady=false;
+exitGateOpened=false;
+
+}
+
+if(millis()-exitGateTimer>30000){
+
+Serial.println("Exit timeout closing gate");
+
+exitGate.write(0);
+
+exitReady=false;
+exitGateOpened=false;
+
+}
+
+}
+
+}
+
+}
+
+void checkReservation(){
+
+HTTPClient http;
+
+http.begin(entryURL);
+
+int code=http.GET();
+
+if(code==200){
+
+String payload=http.getString();
+
+StaticJsonDocument<200> doc;
+
+deserializeJson(doc,payload);
+
+int res_id=doc["res_id"];
+int cell_id=doc["cell_id"];
+
+if(res_id!=0 && !reservationActive){
+
+currentResID=res_id;
+currentSlot=cell_id;
+
+reservationActive=true;
+
+gateOpened=false;
+entryCompleted=false;
+slotOpened=false;
+carParked=false;
+
+detectCount=0;
+
+Serial.print("Reservation ID: ");
+Serial.println(res_id);
+
+Serial.print("Slot: ");
+Serial.println(cell_id);
+}
+}
+
+http.end();
+
+}
+
+void checkExit(){
+
+HTTPClient http;
+
+http.begin(exitURL);
+
+int code=http.GET();
+
+if(code==200){
+
+String payload=http.getString();
+
+StaticJsonDocument<200> doc;
+
+deserializeJson(doc,payload);
+
+int res_id=doc["res_id"];
+
+if(res_id!=0 && !exitReady){
+
+exitResID=res_id;
+
+exitReady=true;
+
+Serial.print("Exit ready for: ");
+Serial.println(res_id);
+
+}
+
+}
+
+http.end();
+
+}
+
+long readDistance(int trig,int echo){
+
+long total=0;
+int valid=0;
+
+for(int i=0;i<3;i++){
+
+digitalWrite(trig,LOW);
+delayMicroseconds(2);
+
+digitalWrite(trig,HIGH);
+delayMicroseconds(10);
+
+digitalWrite(trig,LOW);
+
+long duration=pulseIn(echo,HIGH,20000);
+
+if(duration==0) continue;
+
+long distance=duration*0.034/2;
+
+if(distance>2 && distance<200){
+
+total+=distance;
+valid++;
+
+}
+
+delay(40);
+}
+
+if(valid==0) return 200;
+
+return total/valid;
+
+}
+
+void sendEntryUpdate(int status){
+
+HTTPClient http;
+
+http.begin(updateEntryURL);
+
+http.addHeader("Content-Type","application/json");
+
+String json = "{\"res_id\":" + String(currentResID) + ",\"gate_status\":" + String(status) + "}";
+
+int response=http.POST(json);
+
+Serial.print("Entry HTTP: ");
+Serial.println(response);
+
+http.end();
+
+}
+
+void sendExitUpdate(){
+
+HTTPClient http;
+
+http.begin(updateExitURL);
+
+http.addHeader("Content-Type","application/json");
+
+String json = "{\"res_id\":" + String(exitResID) + "}";
+
+int response=http.POST(json);
+
+Serial.print("Exit HTTP: ");
+Serial.println(response);
+
+http.end();
+
+}
