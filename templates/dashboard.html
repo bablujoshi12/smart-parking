@@ -236,6 +236,105 @@
 
     // Auto-refresh every 30 seconds
     setInterval(loadParkingStatus, 30000);
+
+    // ---------------- Parking Guidance Voice System ----------------
+    function speak(text) {
+      if (!("speechSynthesis" in window)) return;
+
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = "en-US";
+
+      speechSynthesis.cancel();
+      speechSynthesis.speak(utter);
+    }
+
+    const VOICE_SEEN_KEY = "voice_guidance_events_v1";
+    let voiceSeen = {};
+    try {
+      voiceSeen = JSON.parse(sessionStorage.getItem(VOICE_SEEN_KEY) || "{}");
+    } catch {
+      voiceSeen = {};
+    }
+
+    function markSeen(key) {
+      voiceSeen[key] = Date.now();
+      try {
+        sessionStorage.setItem(VOICE_SEEN_KEY, JSON.stringify(voiceSeen));
+      } catch {}
+    }
+
+    function getField(obj, key) {
+      return obj && obj[key] != null ? obj[key] : "";
+    }
+
+    async function pollVoiceGuidance() {
+      // 1️⃣ Slot guidance: enStat = 1
+      try {
+        const r1 = await fetch("/latest_slot_assignment");
+        const d1 = await r1.json();
+        const resId1 = Number(getField(d1, "res_id")) || 0;
+
+        if (resId1) {
+          const slot = getField(d1, "cell_name") || getField(d1, "cell_id");
+          const key = `slot:${resId1}:1`;
+
+          if (!voiceSeen[key]) {
+            speak(
+              `Please park your vehicle in slot number ${slot || "unknown"}.`
+            );
+            markSeen(key);
+          }
+        }
+      } catch (e) {}
+
+      // 2️⃣ Parking confirmation: enStat = 3
+      try {
+        const r2 = await fetch("/latest_parking_event");
+        const d2 = await r2.json();
+        const resId2 = Number(getField(d2, "res_id")) || 0;
+
+        if (resId2) {
+          const veh = getField(d2, "vehNo");
+          const slot = getField(d2, "cell_name") || getField(d2, "cell_id");
+          const key = `park:${resId2}:3`;
+
+          if (!voiceSeen[key]) {
+            speak(
+              `Vehicle ${veh || "unknown"} successfully parked in slot number ${
+                slot || "unknown"
+              }.`
+            );
+            markSeen(key);
+          }
+        }
+      } catch (e) {}
+
+      // 3️⃣ Exit announcement: exStat = 4
+      try {
+        const r3 = await fetch("/latest_exit_event");
+        const d3 = await r3.json();
+        const resId3 = Number(getField(d3, "res_id")) || 0;
+
+        if (resId3) {
+          const veh = getField(d3, "vehNo");
+          const slot = getField(d3, "cell_name") || getField(d3, "cell_id");
+          const key = `exit:${resId3}:4`;
+
+          if (!voiceSeen[key]) {
+            speak(
+              `Vehicle ${veh || "unknown"} exited from slot number ${
+                slot || "unknown"
+              }. The slot is now available.`
+            );
+            markSeen(key);
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Poll every 5 seconds for guidance events
+    setInterval(pollVoiceGuidance, 5000);
+    pollVoiceGuidance();
   </script>
 </body>
 </html>
